@@ -1,0 +1,28 @@
+name: Build and deploy static site to GCS
+
+on:
+  push:
+    branches: [main]
+  repository_dispatch:
+    types: [plasmic]
+
+jobs:
+  deploy:
+    name: Build and deploy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          cache: npm
+      - run: npm ci
+      - run: npx next build
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+      - run: gcloud storage rsync --recursive --delete-unmatched-destination-objects --cache-control="no-cache, max-age=0" out/ "gs://${{ secrets.GCS_BUCKET }}/"
+      - name: Invalidate CDN cache
+        if: vars.GCS_URL_MAP != ''
+        run: |
+          gcloud compute url-maps invalidate-cdn-cache "${{ vars.GCS_URL_MAP }}" --path="/*" --async
