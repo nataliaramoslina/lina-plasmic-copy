@@ -1,14 +1,21 @@
-name: Build and deploy static site to GCS
+name: Deploy to GitHub Pages
 
 on:
   push:
     branches: [main]
-  repository_dispatch:
-    types: [plasmic]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
 
 jobs:
-  deploy:
-    name: Build and deploy
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,11 +25,18 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx next build
-      - uses: google-github-actions/auth@v2
+        env:
+          NEXT_PUBLIC_BASE_PATH: /lina-plasmic-copy
+      - uses: actions/upload-pages-artifact@v3
         with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
-      - run: gcloud storage rsync --recursive --delete-unmatched-destination-objects --cache-control="no-cache, max-age=0" out/ "gs://${{ secrets.GCS_BUCKET }}/"
-      - name: Invalidate CDN cache
-        if: vars.GCS_URL_MAP != ''
-        run: |
-          gcloud compute url-maps invalidate-cdn-cache "${{ vars.GCS_URL_MAP }}" --path="/*" --async
+          path: out/
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
